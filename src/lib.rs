@@ -132,7 +132,8 @@ mod tests {
 
     #[test]
     fn read_python_sysconfig_data() {
-        let src = fs::read_to_string("tests/fixtures/cpython38_sysconfigdata__darwin_darwin.py").unwrap();
+        let src =
+            fs::read_to_string("tests/fixtures/cpython38_sysconfigdata__darwin_darwin.py").unwrap();
         let data = SysConfigData::parse(&src);
         let vars = data.build_time_vars;
         assert_eq!(vars.abiflags, "");
