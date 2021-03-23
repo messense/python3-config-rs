@@ -210,75 +210,62 @@ impl SysConfigData {
         let program = parser::parse_program(src)?;
         let mut vars = BuildTimeVars::default();
         for stmt in program.statements {
-            match stmt.node {
-                StatementType::Assign { targets, value } => {
-                    let var_name = targets.iter().next().ok_or(Error::MissingBuildTimeVars)?;
-                    match &var_name.node {
-                        ExpressionType::Identifier { name } if name == "build_time_vars" => {}
-                        _ => continue,
-                    }
-                    if let ExpressionType::Dict { elements } = value.node {
-                        for (key, value) in elements {
-                            if let Some(key) = key.and_then(|key| get_string(&key)) {
-                                match key.as_str() {
-                                    "ABIFLAGS" => {
-                                        vars.abiflags = get_string(&value).unwrap_or_default()
-                                    }
-                                    "COUNT_ALLOCS" => vars.count_allocs = get_bool(&value),
-                                    "CFLAGS" => {
-                                        vars.cflags = get_string(&value).unwrap_or_default()
-                                    }
-                                    "LIBPL" => {
-                                        vars.config_dir = get_string(&value).unwrap_or_default()
-                                    }
-                                    "EXT_SUFFIX" => {
-                                        vars.ext_suffix = get_string(&value).unwrap_or_default()
-                                    }
-                                    "exec_prefix" => {
-                                        vars.exec_prefix = get_string(&value).unwrap_or_default()
-                                    }
-                                    "INCLUDEDIR" => {
-                                        vars.include_dir = get_string(&value).unwrap_or_default()
-                                    }
-                                    "LIBDIR" => {
-                                        vars.lib_dir = get_string(&value).unwrap_or_default()
-                                    }
-                                    "LIBS" => vars.libs = get_string(&value).unwrap_or_default(),
-                                    "LDFLAGS" => {
-                                        vars.ldflags = get_string(&value).unwrap_or_default()
-                                    }
-                                    "LDVERSION" => {
-                                        vars.ld_version = get_string(&value).unwrap_or_default()
-                                    }
-                                    "prefix" => {
-                                        vars.prefix = get_string(&value).unwrap_or_default()
-                                    }
-                                    "Py_DEBUG" => vars.py_debug = get_bool(&value),
-                                    "Py_ENABLE_SHARED" => vars.py_enable_shared = get_bool(&value),
-                                    "Py_REF_DEBUG" => vars.py_ref_debug = get_bool(&value),
-                                    "Py_TRACE_REFS" => vars.py_trace_refs = get_bool(&value),
-                                    "SOABI" => vars.soabi = get_string(&value).unwrap_or_default(),
-                                    "SHLIB_SUFFIX" => {
-                                        vars.shlib_suffix = get_string(&value).unwrap_or_default()
-                                    }
-                                    "SIZEOF_VOID_P" => {
-                                        vars.size_of_void_p = get_number(&value)
-                                            .ok_or_else(|| Error::KeyError("SIZEOF_VOID_P"))?
-                                            as u32
-                                    }
-                                    "VERSION" => {
-                                        vars.version = get_string(&value)
-                                            .ok_or_else(|| Error::KeyError("VERSION"))?
-                                    }
-                                    _ => continue,
+            if let StatementType::Assign { targets, value } = stmt.node {
+                let var_name = targets.get(0).ok_or(Error::MissingBuildTimeVars)?;
+                match &var_name.node {
+                    ExpressionType::Identifier { name } if name == "build_time_vars" => {}
+                    _ => continue,
+                }
+                if let ExpressionType::Dict { elements } = value.node {
+                    for (key, value) in elements {
+                        if let Some(key) = key.and_then(|key| get_string(&key)) {
+                            match key.as_str() {
+                                "ABIFLAGS" => {
+                                    vars.abiflags = get_string(&value).unwrap_or_default()
                                 }
-                            } else {
-                                continue;
+                                "COUNT_ALLOCS" => vars.count_allocs = get_bool(&value),
+                                "CFLAGS" => vars.cflags = get_string(&value).unwrap_or_default(),
+                                "LIBPL" => vars.config_dir = get_string(&value).unwrap_or_default(),
+                                "EXT_SUFFIX" => {
+                                    vars.ext_suffix = get_string(&value).unwrap_or_default()
+                                }
+                                "exec_prefix" => {
+                                    vars.exec_prefix = get_string(&value).unwrap_or_default()
+                                }
+                                "INCLUDEDIR" => {
+                                    vars.include_dir = get_string(&value).unwrap_or_default()
+                                }
+                                "LIBDIR" => vars.lib_dir = get_string(&value).unwrap_or_default(),
+                                "LIBS" => vars.libs = get_string(&value).unwrap_or_default(),
+                                "LDFLAGS" => vars.ldflags = get_string(&value).unwrap_or_default(),
+                                "LDVERSION" => {
+                                    vars.ld_version = get_string(&value).unwrap_or_default()
+                                }
+                                "prefix" => vars.prefix = get_string(&value).unwrap_or_default(),
+                                "Py_DEBUG" => vars.py_debug = get_bool(&value),
+                                "Py_ENABLE_SHARED" => vars.py_enable_shared = get_bool(&value),
+                                "Py_REF_DEBUG" => vars.py_ref_debug = get_bool(&value),
+                                "Py_TRACE_REFS" => vars.py_trace_refs = get_bool(&value),
+                                "SOABI" => vars.soabi = get_string(&value).unwrap_or_default(),
+                                "SHLIB_SUFFIX" => {
+                                    vars.shlib_suffix = get_string(&value).unwrap_or_default()
+                                }
+                                "SIZEOF_VOID_P" => {
+                                    vars.size_of_void_p = get_number(&value)
+                                        .ok_or(Error::KeyError("SIZEOF_VOID_P"))?
+                                        as u32
+                                }
+                                "VERSION" => {
+                                    vars.version =
+                                        get_string(&value).ok_or(Error::KeyError("VERSION"))?
+                                }
+                                _ => continue,
                             }
+                        } else {
+                            continue;
                         }
                     }
                 }
-                _ => {}
             }
         }
         if vars.version.is_empty() {
@@ -298,9 +285,8 @@ fn get_string(expr: &Expression) -> Option<String> {
             StringGroup::Joined { values } => {
                 let mut s = String::new();
                 for value in values {
-                    match value {
-                        StringGroup::Constant { value: cs } => s.push_str(&cs),
-                        _ => {}
+                    if let StringGroup::Constant { value: cs } = value {
+                        s.push_str(&cs)
                     }
                 }
                 Some(s)
@@ -315,10 +301,13 @@ fn get_number(expr: &Expression) -> Option<i32> {
     use num_traits::cast::ToPrimitive;
 
     match &expr.node {
-        ExpressionType::Number { value } => match value {
-            Number::Integer { value } => value.to_i32(),
-            _ => None,
-        },
+        ExpressionType::Number { value } => {
+            if let Number::Integer { value } = value {
+                value.to_i32()
+            } else {
+                None
+            }
+        }
         _ => None,
     }
 }
