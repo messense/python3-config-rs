@@ -1,5 +1,46 @@
+use std::error;
+use std::fmt;
+
 use rustpython_parser::ast::{Expression, ExpressionType, Number, StatementType, StringGroup};
+use rustpython_parser::error::ParseError;
 use rustpython_parser::parser;
+
+/// Represents an error during parsing
+#[derive(Debug)]
+pub enum Error {
+    /// Python source code syntax error
+    SyntaxError(ParseError),
+    /// missing build_time_vars variable
+    MissingBuildTimeVars,
+    /// missing required key in configuration
+    KeyError(&'static str),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::SyntaxError(err) => err.fmt(f),
+            Error::MissingBuildTimeVars => write!(f, "missing build_time_vars variable"),
+            Error::KeyError(key) => write!(f, "missing required key {}", key),
+        }
+    }
+}
+
+impl error::Error for Error {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        match self {
+            Error::SyntaxError(err) => Some(err),
+            Error::MissingBuildTimeVars => None,
+            Error::KeyError(_) => None,
+        }
+    }
+}
+
+impl From<ParseError> for Error {
+    fn from(err: ParseError) -> Self {
+        Self::SyntaxError(err)
+    }
+}
 
 /// Python configuration information
 #[derive(Debug, Clone)]
@@ -9,9 +50,9 @@ pub struct PythonConfig {
 
 impl PythonConfig {
     /// Parse from `_sysconfigdata.py` content
-    pub fn parse(src: &str) -> Self {
-        let sys_config_data = SysConfigData::parse(src);
-        Self { sys_config_data }
+    pub fn parse(src: &str) -> Result<Self, Error> {
+        let sys_config_data = SysConfigData::parse(src)?;
+        Ok(Self { sys_config_data })
     }
 
     /// Returns Python version
@@ -128,8 +169,8 @@ impl PythonConfig {
         self.sys_config_data.build_time_vars.with_thread
     }
 
-    /// Returns pointer width of this distribution
-    pub fn pointer_width(&self) -> u32 {
+    /// Returns pointer size (size of C `void*`) of this distribution
+    pub fn pointer_size(&self) -> u32 {
         self.sys_config_data.build_time_vars.size_of_void_p
     }
 }
@@ -165,46 +206,70 @@ struct BuildTimeVars {
 }
 
 impl SysConfigData {
-    pub fn parse(src: &str) -> Self {
-        let program = parser::parse_program(src).unwrap();
+    pub fn parse(src: &str) -> Result<Self, Error> {
+        let program = parser::parse_program(src)?;
         let mut vars = BuildTimeVars::default();
         for stmt in program.statements {
             match stmt.node {
                 StatementType::Assign { targets, value } => {
-                    let var_name = targets.iter().next().unwrap();
+                    let var_name = targets.iter().next().ok_or(Error::MissingBuildTimeVars)?;
                     match &var_name.node {
                         ExpressionType::Identifier { name } if name == "build_time_vars" => {}
                         _ => continue,
                     }
                     if let ExpressionType::Dict { elements } = value.node {
                         for (key, value) in elements {
-                            if let Some(key) = key {
-                                let key = get_string(&key).unwrap();
+                            if let Some(key) = key.and_then(|key| get_string(&key)) {
                                 match key.as_str() {
-                                    "ABIFLAGS" => vars.abiflags = get_string(&value).unwrap(),
+                                    "ABIFLAGS" => {
+                                        vars.abiflags = get_string(&value).unwrap_or_default()
+                                    }
                                     "COUNT_ALLOCS" => vars.count_allocs = get_bool(&value),
-                                    "CFLAGS" => vars.cflags = get_string(&value).unwrap(),
-                                    "LIBPL" => vars.config_dir = get_string(&value).unwrap(),
-                                    "EXT_SUFFIX" => vars.ext_suffix = get_string(&value).unwrap(),
-                                    "exec_prefix" => vars.exec_prefix = get_string(&value).unwrap(),
-                                    "INCLUDEDIR" => vars.include_dir = get_string(&value).unwrap(),
-                                    "LIBDIR" => vars.lib_dir = get_string(&value).unwrap(),
-                                    "LIBS" => vars.libs = get_string(&value).unwrap(),
-                                    "LDFLAGS" => vars.ldflags = get_string(&value).unwrap(),
-                                    "LDVERSION" => vars.ld_version = get_string(&value).unwrap(),
-                                    "prefix" => vars.prefix = get_string(&value).unwrap(),
+                                    "CFLAGS" => {
+                                        vars.cflags = get_string(&value).unwrap_or_default()
+                                    }
+                                    "LIBPL" => {
+                                        vars.config_dir = get_string(&value).unwrap_or_default()
+                                    }
+                                    "EXT_SUFFIX" => {
+                                        vars.ext_suffix = get_string(&value).unwrap_or_default()
+                                    }
+                                    "exec_prefix" => {
+                                        vars.exec_prefix = get_string(&value).unwrap_or_default()
+                                    }
+                                    "INCLUDEDIR" => {
+                                        vars.include_dir = get_string(&value).unwrap_or_default()
+                                    }
+                                    "LIBDIR" => {
+                                        vars.lib_dir = get_string(&value).unwrap_or_default()
+                                    }
+                                    "LIBS" => vars.libs = get_string(&value).unwrap_or_default(),
+                                    "LDFLAGS" => {
+                                        vars.ldflags = get_string(&value).unwrap_or_default()
+                                    }
+                                    "LDVERSION" => {
+                                        vars.ld_version = get_string(&value).unwrap_or_default()
+                                    }
+                                    "prefix" => {
+                                        vars.prefix = get_string(&value).unwrap_or_default()
+                                    }
                                     "Py_DEBUG" => vars.py_debug = get_bool(&value),
                                     "Py_ENABLE_SHARED" => vars.py_enable_shared = get_bool(&value),
                                     "Py_REF_DEBUG" => vars.py_ref_debug = get_bool(&value),
                                     "Py_TRACE_REFS" => vars.py_trace_refs = get_bool(&value),
-                                    "SOABI" => vars.soabi = get_string(&value).unwrap(),
+                                    "SOABI" => vars.soabi = get_string(&value).unwrap_or_default(),
                                     "SHLIB_SUFFIX" => {
-                                        vars.shlib_suffix = get_string(&value).unwrap()
+                                        vars.shlib_suffix = get_string(&value).unwrap_or_default()
                                     }
                                     "SIZEOF_VOID_P" => {
-                                        vars.size_of_void_p = get_number(&value).unwrap() as u32
+                                        vars.size_of_void_p = get_number(&value)
+                                            .ok_or_else(|| Error::KeyError("SIZEOF_VOID_P"))?
+                                            as u32
                                     }
-                                    "VERSION" => vars.version = get_string(&value).unwrap(),
+                                    "VERSION" => {
+                                        vars.version = get_string(&value)
+                                            .ok_or_else(|| Error::KeyError("VERSION"))?
+                                    }
                                     _ => continue,
                                 }
                             } else {
@@ -216,9 +281,13 @@ impl SysConfigData {
                 _ => {}
             }
         }
-        SysConfigData {
-            build_time_vars: vars,
+        if vars.version.is_empty() {
+            // no build_time_vars found
+            return Err(Error::MissingBuildTimeVars);
         }
+        Ok(SysConfigData {
+            build_time_vars: vars,
+        })
     }
 }
 
@@ -260,18 +329,35 @@ fn get_bool(expr: &Expression) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::PythonConfig;
+    use super::{Error, PythonConfig};
     use std::fs;
 
     #[test]
     fn read_python_sysconfig_data() {
         let src =
             fs::read_to_string("tests/fixtures/cpython38_sysconfigdata__darwin_darwin.py").unwrap();
-        let config = PythonConfig::parse(&src);
+        let config = PythonConfig::parse(&src).unwrap();
         assert_eq!(config.abiflags(), "");
         assert_eq!(config.soabi(), "cpython-38-darwin");
         assert_eq!(config.version(), "3.8");
         assert_eq!(config.version_major(), 3);
         assert_eq!(config.version_minor(), 8);
+    }
+
+    #[test]
+    fn read_invalid_python_sysconfig_data() {
+        let config = PythonConfig::parse("i++").unwrap_err();
+        assert!(matches!(config, Error::SyntaxError(_)));
+
+        let config = PythonConfig::parse("").unwrap_err();
+        assert!(matches!(config, Error::MissingBuildTimeVars));
+
+        let config = PythonConfig::parse("i = 0").unwrap_err();
+        assert!(matches!(config, Error::MissingBuildTimeVars));
+
+        let config =
+            PythonConfig::parse("build_time_vars = {'VERSION': '3.8', 'SIZEOF_VOID_P': ''}")
+                .unwrap_err();
+        assert!(matches!(config, Error::KeyError("SIZEOF_VOID_P")));
     }
 }
