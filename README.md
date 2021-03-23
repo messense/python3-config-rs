@@ -12,7 +12,7 @@ Add it to your ``Cargo.toml``:
 
 ```toml
 [dependencies]
-python3-config = "0.1"
+python3-config = "0.2"
 ```
 
 then you are good to go. If you are using Rust 2015 you have to add ``extern crate python3_config`` to your crate root as well. 
