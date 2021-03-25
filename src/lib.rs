@@ -1,5 +1,6 @@
 use std::error;
 use std::fmt;
+use std::str::FromStr;
 
 use rustpython_parser::ast::{Expression, ExpressionType, Number, StatementType, StringGroup};
 use rustpython_parser::error::ParseError;
@@ -316,6 +317,14 @@ fn get_bool(expr: &Expression) -> bool {
     get_number(expr).map(|x| x == 1).unwrap_or(false)
 }
 
+impl FromStr for PythonConfig {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Error, PythonConfig};
@@ -331,6 +340,10 @@ mod tests {
         assert_eq!(config.version(), "3.8");
         assert_eq!(config.version_major(), 3);
         assert_eq!(config.version_minor(), 8);
+
+        // Test FromStr impl
+        let config: PythonConfig = src.parse().unwrap();
+        assert_eq!(config.abiflags(), "");
     }
 
     #[test]
